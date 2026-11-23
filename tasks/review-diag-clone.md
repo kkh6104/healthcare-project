@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): diag 빌드타입이 applicationId com.gh.healthapp.diag 로 빌드되는지, debug/release 설정이 바뀌지 않았는지, readAllPages 종료 조건 로직이 그대로이고 토큰/종료 이유 로그만 추가됐는지, assembleDebug·assembleDiag 성공 여부만. 결과: tasks/review-diag-clone-result.md 첫 줄 PASS/FAIL, 5줄 이내. FAIL이면 실제 영향 한 줄.

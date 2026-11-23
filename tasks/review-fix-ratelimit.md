@@ -1,0 +1,1 @@
+# 검수 (최소): tasks/fix-ratelimit.md 기준으로 (1) RESUMED가 refreshIfStale을 호출하고 버튼/권한 콜백은 refresh 유지, (2) lastLoadedAt은 Loaded 성공 시에만 갱신, (3) quota/rate limit 메시지 변환, (4) assembleDebug 성공 여부만 확인. 코드 수정 금지. 결과: tasks/review-fix-ratelimit-result.md 첫 줄 PASS/FAIL, 6줄 이내.
