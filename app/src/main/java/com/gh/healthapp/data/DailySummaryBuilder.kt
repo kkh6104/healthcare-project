@@ -29,7 +29,7 @@ class DailySummaryBuilder(private val dao: HealthDao) {
                 waterRows = dao.recordsBetween(RecordType.BODY_WATER_MASS, from, to - 1),
                 nowMs = now,
                 csvSteps = csvSteps,
-            )
+            ).copy(walkDistanceM = dao.summary(date.toString())?.walkDistanceM) // 걷기 거리는 다시 계산하지 않고 유지
         }
         dao.upsertSummaries(result)
     }

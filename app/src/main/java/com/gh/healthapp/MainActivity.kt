@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -54,6 +55,13 @@ import com.gh.healthapp.ui.BodyTab
 import com.gh.healthapp.ui.HomeTab
 import com.gh.healthapp.ui.SettingsScreen
 import com.gh.healthapp.ui.SleepTab
+import com.gh.healthapp.ui.walk.WalkDetail
+import com.gh.healthapp.ui.walk.WalkTab
+import com.gh.healthapp.walk.WalkStatus
+import com.gh.healthapp.walk.WalkTracker
+import com.gh.healthapp.data.DetailReader
+import com.gh.healthapp.ui.detail.DetailKind
+import com.gh.healthapp.ui.detail.DetailScreen
 import com.gh.healthapp.ui.icons.HealthIcons
 import com.gh.healthapp.ui.theme.HealthAppTheme
 import java.time.Instant
@@ -65,6 +73,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 앱이 다시 켜졌을 때 끝나지 않고 남은 걷기 기록 정리
+        WalkTracker.restore(applicationContext)
         setContent {
             HealthAppTheme {
                 StepsScreen()
@@ -77,7 +87,8 @@ private data class TabItem(val label: String, val icon: ImageVector)
 
 private val TABS = listOf(
     TabItem("오늘", Icons.Default.Home),
-    TabItem("활동", HealthIcons.Walk),
+    TabItem("활동", Icons.Default.Favorite),
+    TabItem("걷기", HealthIcons.Walk),
     TabItem("수면", HealthIcons.Sleep),
     TabItem("몸", HealthIcons.Weight),
 )
@@ -113,6 +124,7 @@ fun StepsScreen(vm: StepsViewModel = viewModel()) {
             syncing = syncing,
             importProgress = importProgress,
             diagnostics = diagState,
+            detailReader = vm.manager.detail,
             onRefresh = { vm.refresh("button") },
             onImport = { folderLauncher.launch(null) },
             onDiagnose = { vm.loadDiagnostics() },
@@ -165,6 +177,7 @@ private fun LoadedShell(
     syncing: Boolean,
     importProgress: String?,
     diagnostics: StepsDiagnostics?,
+    detailReader: DetailReader,
     onRefresh: () -> Unit,
     onImport: () -> Unit,
     onDiagnose: () -> Unit,
@@ -173,7 +186,27 @@ private fun LoadedShell(
     var showSettings by rememberSaveable { mutableStateOf(false) }
     // 닫은 배너 문구 (같은 문구는 다시 안 보임, 새 문구가 오면 다시 표시)
     var dismissedBanner by rememberSaveable { mutableStateOf<String?>(null) }
-    BackHandler(enabled = showSettings) { showSettings = false }
+    // 카드를 눌러 연 상세 화면 (null이면 탭 화면)
+    var detail by rememberSaveable { mutableStateOf<DetailKind?>(null) }
+    // 걷기 기록 상세 (null이면 탭 화면)
+    var walkDetailId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // 걷기를 끝내면 방금 끝낸 기록의 상세로 이동
+    val walkLive by WalkTracker.state.collectAsState()
+    var lastWalkId by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(walkLive.status, walkLive.sessionId) {
+        if (walkLive.status != WalkStatus.IDLE) {
+            lastWalkId = walkLive.sessionId
+        } else {
+            lastWalkId?.let {
+                walkDetailId = it
+                tab = 2
+                lastWalkId = null
+            }
+        }
+    }
+    BackHandler(enabled = walkDetailId != null) { walkDetailId = null }
+    BackHandler(enabled = detail != null) { detail = null }
+    BackHandler(enabled = showSettings && detail == null) { showSettings = false }
 
     val syncTimeFmt = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN).withZone(ZoneId.systemDefault())
     val subtitle = when {
@@ -188,19 +221,21 @@ private fun LoadedShell(
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (showSettings) "설정" else "내 건강 데이터", style = MaterialTheme.typography.titleLarge)
+                        Text(if (walkDetailId != null) "걷기 기록" else detail?.title ?: if (showSettings) "설정" else "내 건강 데이터", style = MaterialTheme.typography.titleLarge)
                         Text(subtitle, style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 navigationIcon = {
-                    if (showSettings) {
-                        IconButton(onClick = { showSettings = false }) {
+                    if (walkDetailId != null || detail != null || showSettings) {
+                        IconButton(onClick = {
+                            if (walkDetailId != null) walkDetailId = null else if (detail != null) detail = null else showSettings = false
+                        }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
                         }
                     }
                 },
                 actions = {
-                    if (!showSettings) {
+                    if (!showSettings && detail == null && walkDetailId == null) {
                         IconButton(onClick = { showSettings = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "설정")
                         }
@@ -209,7 +244,7 @@ private fun LoadedShell(
             )
         },
         bottomBar = {
-            if (!showSettings) {
+            if (!showSettings && detail == null && walkDetailId == null) {
                 NavigationBar {
                     TABS.forEachIndexed { i, item ->
                         NavigationBarItem(
@@ -228,7 +263,13 @@ private fun LoadedShell(
             if (banner != null && banner != dismissedBanner) {
                 BannerCard(banner, onDismiss = { dismissedBanner = banner })
             }
-            if (showSettings) {
+            val openDetail = detail
+            val openWalk = walkDetailId
+            if (openWalk != null) {
+                WalkDetail(openWalk, onDeleted = { walkDetailId = null })
+            } else if (openDetail != null) {
+                DetailScreen(openDetail, s, detailReader)
+            } else if (showSettings) {
                 SettingsScreen(
                     lastSync = lastSync,
                     syncing = syncing,
@@ -241,9 +282,10 @@ private fun LoadedShell(
             } else {
                 when (tab) {
                     0 -> HomeTab(s, onOpenTab = { tab = it })
-                    1 -> ActivityTab(s)
-                    2 -> SleepTab(s)
-                    else -> BodyTab(s)
+                    1 -> ActivityTab(s, onOpenDetail = { detail = it })
+                    2 -> WalkTab(onOpenWalk = { walkDetailId = it })
+                    3 -> SleepTab(s, onOpenDetail = { detail = it })
+                    else -> BodyTab(s, onOpenDetail = { detail = it })
                 }
             }
         }

@@ -18,4 +18,6 @@ data class DailySummaryEntity(
     val leanMassKg: Double?,
     val bodyWaterKg: Double?,
     val updatedAt: Long,
+    /** 그날 끝난 걷기 기록의 거리 합 (m). 걷기 기록이 없으면 null */
+    val walkDistanceM: Double? = null,
 )

@@ -31,6 +31,7 @@ fun LineChart(
     modifier: Modifier = Modifier,
     height: Dp = 180.dp,
     yFormatter: (Float) -> String = { String.format(Locale.KOREAN, "%.1f", it) },
+    minYSpan: Float? = null,
 ) {
     if (points.isEmpty()) {
         Box(modifier.fillMaxWidth().height(height), contentAlignment = Alignment.Center) {
@@ -41,7 +42,17 @@ fun LineChart(
     val sorted = points.sortedBy { it.x }
     var minY = sorted.minOf { it.y }
     var maxY = sorted.maxOf { it.y }
+    // 값 범위가 minYSpan보다 좁으면 중앙 기준으로 넓힘 (변화 과장 방지)
+    if (minYSpan != null && maxY - minY < minYSpan) {
+        val mid = (maxY + minY) / 2f
+        minY = mid - minYSpan / 2f
+        maxY = mid + minYSpan / 2f
+    }
     if (maxY - minY == 0f) { minY -= 1f; maxY += 1f }
+    // 상하 10% 여백
+    val margin = (maxY - minY) * 0.1f
+    minY -= margin
+    maxY += margin
     val minX = sorted.first().x
     val maxX = sorted.last().x
     val lineColor = MaterialTheme.colorScheme.primary

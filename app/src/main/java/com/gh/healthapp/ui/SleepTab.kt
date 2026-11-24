@@ -1,5 +1,6 @@
 package com.gh.healthapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,14 +15,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gh.healthapp.Section
-import com.gh.healthapp.SleepNight
+import com.gh.healthapp.SleepDay
 import com.gh.healthapp.StepsUiState
+import com.gh.healthapp.ui.detail.DetailHeader
+import com.gh.healthapp.ui.detail.DetailKind
 import com.gh.healthapp.ui.charts.BarChart
 import com.gh.healthapp.ui.charts.BarItem
 import com.gh.healthapp.ui.charts.Segment
 import com.gh.healthapp.ui.charts.SleepColors
 import com.gh.healthapp.ui.charts.StackedBar
 import java.time.Duration
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -34,24 +38,24 @@ private fun fmtDuration(d: Duration): String {
 
 /** 수면 탭: 어젯밤 카드(단계 비율) + 최근 7일 막대 그래프 */
 @Composable
-fun SleepTab(state: StepsUiState.Loaded) {
+fun SleepTab(state: StepsUiState.Loaded, onOpenDetail: (DetailKind) -> Unit) {
     val sleep = (state.sleep as? Section.Ok)?.data
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (sleep == null) return@Column
-        val hasAny = sleep.lastNight != null || sleep.recent.any { !it.second.isZero }
+        val hasAny = sleep.day != null || sleep.recent.any { !it.second.isZero }
         if (!hasAny) {
             Text("수면 기록이 없습니다. 설정에서 삼성헬스 데이터를 가져올 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             return@Column
         }
-        sleep.lastNight?.let { LastNightCard(it) }
+        sleep.day?.let { DayCard(it) { onOpenDetail(DetailKind.SLEEP_LAST_NIGHT) } }
         val ordered = sleep.recent.sortedBy { it.first }
         val nonZero = ordered.filter { !it.second.isZero }
-        Card(Modifier.fillMaxWidth()) {
+        Card(Modifier.fillMaxWidth().clickable { onOpenDetail(DetailKind.SLEEP_HISTORY) }) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("최근 7일", style = MaterialTheme.typography.titleMedium)
+                DetailHeader("최근 7일")
                 BarChart(
                     items = ordered.mapIndexed { i, (date, d) ->
                         BarItem(
@@ -73,23 +77,28 @@ fun SleepTab(state: StepsUiState.Loaded) {
 }
 
 @Composable
-private fun LastNightCard(n: SleepNight) {
+private fun DayCard(day: SleepDay, onClick: () -> Unit) {
     val timeFmt = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN).withZone(ZoneId.systemDefault())
-    Card(Modifier.fillMaxWidth()) {
+    val title = if (day.date == LocalDate.now()) "오늘 수면" else "어제 수면"
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("어젯밤", style = MaterialTheme.typography.titleMedium)
-            Text(fmtDuration(n.asleep), style = MaterialTheme.typography.displaySmall)
-            Text("${timeFmt.format(n.start)} ~ ${timeFmt.format(n.end)}", style = MaterialTheme.typography.bodySmall)
-            if (n.deep == null && n.light == null && n.rem == null && n.awake == null) {
+            DetailHeader(title)
+            Text(fmtDuration(day.asleep), style = MaterialTheme.typography.displaySmall)
+            val range = "${timeFmt.format(day.firstStart)} ~ ${timeFmt.format(day.lastEnd)}"
+            Text(
+                if (day.sessions.size >= 2) "${day.sessions.size}회 나눠 잠 · $range" else range,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (day.deep == null && day.light == null && day.rem == null && day.awake == null) {
                 Text("단계 정보 없음", style = MaterialTheme.typography.bodyMedium)
             } else {
                 fun min(d: Duration?) = (d?.toMinutes() ?: 0L).toFloat()
                 StackedBar(
                     listOf(
-                        Segment("깊은", min(n.deep), SleepColors.deep()),
-                        Segment("얕은", min(n.light), SleepColors.light()),
-                        Segment("렘", min(n.rem), SleepColors.rem()),
-                        Segment("깸", min(n.awake), SleepColors.awake()),
+                        Segment("깊은", min(day.deep), SleepColors.deep()),
+                        Segment("얕은", min(day.light), SleepColors.light()),
+                        Segment("렘", min(day.rem), SleepColors.rem()),
+                        Segment("깸", min(day.awake), SleepColors.awake()),
                     )
                 )
             }

@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/fix-walk-jitter.md 기준 — 앵커 방식 거리 누적, 속도/정확도 필터와 3회 연속 거부 시 재설정, 표시용 다듬기(원본은 DB 저장), 추가 테스트 통과, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-fix-walk-jitter-result.md 첫 줄 PASS/FAIL, 5줄 이내. FAIL은 실제 상황 한 줄.

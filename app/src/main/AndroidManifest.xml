@@ -12,6 +12,17 @@
     <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
     <uses-permission android:name="android.permission.health.READ_BODY_WATER_MASS" />
 
+    <!-- 지도 타일(OpenStreetMap) 다운로드 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 걷기 기록: 위치(포그라운드 서비스), 걸음 센서, 알림. 백그라운드 위치 권한은 쓰지 않음 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!-- Android 13 이하: 별도 설치된 Health Connect 앱을 찾기 위해 필요 -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -38,6 +49,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".walk.WalkService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- 권한 화면의 "개인정보처리방침" 링크 (Android 13 이하). 이게 없으면 권한 창이 안 뜰 수 있음 -->
         <activity

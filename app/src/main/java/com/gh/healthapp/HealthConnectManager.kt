@@ -66,6 +66,7 @@ class HealthConnectManager(private val context: Context) {
     val summaryBuilder by lazy { DailySummaryBuilder(dao) }
     val local by lazy { LocalHealthReader(dao) }
     val retention by lazy { HeartRateRetention(dao) }
+    val detail by lazy { com.gh.healthapp.data.DetailReader(dao) }
 
     /** 가져오기 등 외부 레코드를 500개씩 나눠 저장 (externalId 기준 덮어쓰기라 중복 안 생김) */
     suspend fun saveRecords(list: List<com.gh.healthapp.data.HealthRecordEntity>) {

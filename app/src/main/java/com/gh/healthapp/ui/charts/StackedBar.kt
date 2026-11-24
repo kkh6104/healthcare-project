@@ -27,7 +27,7 @@ data class Segment(val label: String, val value: Float, val color: Color)
 
 object SleepColors {
     @Composable fun deep(): Color = MaterialTheme.colorScheme.primary
-    @Composable fun light(): Color = MaterialTheme.colorScheme.primaryContainer
+    @Composable fun light(): Color = MaterialTheme.colorScheme.secondary
     @Composable fun rem(): Color = MaterialTheme.colorScheme.tertiary
     @Composable fun awake(): Color = MaterialTheme.colorScheme.error
 }

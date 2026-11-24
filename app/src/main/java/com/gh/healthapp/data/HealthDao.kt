@@ -49,6 +49,13 @@ interface HealthDao {
     @Query("SELECT * FROM daily_summary WHERE date >= :fromDate ORDER BY date DESC")
     fun summariesFlow(fromDate: String): Flow<List<DailySummaryEntity>>
 
+    @Query("SELECT * FROM daily_summary WHERE date >= :from AND date <= :to ORDER BY date DESC")
+    suspend fun summariesBetween(from: String, to: String): List<DailySummaryEntity>
+
+    /** 걷기 거리만 갱신 (행이 있을 때). 바뀐 행 수 반환 */
+    @Query("UPDATE daily_summary SET walkDistanceM = :meters, updatedAt = :now WHERE date = :date")
+    suspend fun updateWalkDistance(date: String, meters: Double?, now: Long): Int
+
     @Query("SELECT * FROM daily_summary WHERE date = :date")
     suspend fun summary(date: String): DailySummaryEntity?
 

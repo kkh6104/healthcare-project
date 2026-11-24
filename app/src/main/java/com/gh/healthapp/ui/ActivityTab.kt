@@ -1,5 +1,6 @@
 package com.gh.healthapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import com.gh.healthapp.HeartRateSummary
 import com.gh.healthapp.Section
 import com.gh.healthapp.StepsUiState
+import com.gh.healthapp.ui.detail.DetailHeader
+import com.gh.healthapp.ui.detail.DetailKind
 import com.gh.healthapp.ui.charts.BarChart
 import com.gh.healthapp.ui.charts.BarItem
 import java.text.NumberFormat
@@ -28,7 +31,7 @@ import java.util.Locale
 
 /** 활동 탭: 걸음 카드(7일 막대 그래프) + 심박 카드 */
 @Composable
-fun ActivityTab(state: StepsUiState.Loaded) {
+fun ActivityTab(state: StepsUiState.Loaded, onOpenDetail: (DetailKind) -> Unit) {
     val hr = (state.heartRate as? Section.Ok)?.data
     val steps = (state.steps as? Section.Ok)?.data.orEmpty()
     LazyColumn(
@@ -36,22 +39,22 @@ fun ActivityTab(state: StepsUiState.Loaded) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (steps.isNotEmpty()) item { StepsCard(steps) }
-        if (hr != null) item { HeartRateCard(hr) }
+        if (steps.isNotEmpty()) item { StepsCard(steps) { onOpenDetail(DetailKind.STEPS) } }
+        if (hr != null) item { HeartRateCard(hr) { onOpenDetail(DetailKind.HEART_RATE) } }
     }
 }
 
 @Composable
-private fun StepsCard(steps: List<Pair<java.time.LocalDate, Long>>) {
+private fun StepsCard(steps: List<Pair<java.time.LocalDate, Long>>, onClick: () -> Unit) {
     val fmt = NumberFormat.getInstance(Locale.KOREA)
     val dateFmt = DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)
     val ordered = steps.sortedBy { it.first }
     val today = ordered.last()
     val avg = ordered.sumOf { it.second } / ordered.size
     val best = ordered.maxByOrNull { it.second }!!
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("걸음", style = MaterialTheme.typography.titleMedium)
+            DetailHeader("걸음")
             Text("${fmt.format(today.second)} 걸음", style = MaterialTheme.typography.displaySmall)
             BarChart(
                 items = ordered.map {
@@ -73,11 +76,11 @@ private fun StepsCard(steps: List<Pair<java.time.LocalDate, Long>>) {
 }
 
 @Composable
-fun HeartRateCard(hr: HeartRateSummary) {
+fun HeartRateCard(hr: HeartRateSummary, onClick: () -> Unit = {}) {
     val timeFmt = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN).withZone(ZoneId.systemDefault())
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(20.dp)) {
-            Text("심박수 (오늘)", style = MaterialTheme.typography.titleMedium)
+            DetailHeader("심박수 (오늘)")
             if (hr.latestBpm == null) {
                 Text("오늘 심박수 기록이 없습니다.")
             } else {

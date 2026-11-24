@@ -6,6 +6,8 @@ import com.gh.healthapp.MetricEntry
 import com.gh.healthapp.MetricSummary
 import com.gh.healthapp.SleepNight
 import com.gh.healthapp.SleepSummary
+import com.gh.healthapp.groupSleepDays
+import com.gh.healthapp.pickDisplayDay
 import com.gh.healthapp.WeightEntry
 import com.gh.healthapp.WeightSummary
 import com.gh.healthapp.buildMetricSummary
@@ -62,7 +64,7 @@ class LocalHealthReader(private val dao: HealthDao) {
         }
         val cutoff = now.minus(Duration.ofHours(36))
         val last = nights.filter { it.end >= cutoff && it.end <= now }.maxByOrNull { it.end }
-        return SleepSummary(last, recent)
+        return SleepSummary(last, recent, pickDisplayDay(groupSleepDays(nights), today))
     }
 
     suspend fun weight(days: Int = 30): WeightSummary {

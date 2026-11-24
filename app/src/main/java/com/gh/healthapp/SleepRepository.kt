@@ -21,7 +21,53 @@ data class SleepNight(
 )
 
 /** recent: 최근 7일, 최신 날짜 먼저, 기록 없으면 Duration.ZERO */
-data class SleepSummary(val lastNight: SleepNight?, val recent: List<Pair<LocalDate, Duration>>)
+/**
+ * 수면일 하나의 합산. 수면일 = 세션 종료 시각의 날짜(기기 시간대)라서 자정을 넘긴 세션은 다음날로 센다.
+ * 단계(deep/light/rem/awake)는 단계 정보가 있는 세션만 더하고, 하나도 없으면 null.
+ */
+data class SleepDay(
+    val date: LocalDate,
+    val sessions: List<SleepNight>,
+    val asleep: Duration,
+    val deep: Duration?,
+    val light: Duration?,
+    val rem: Duration?,
+    val awake: Duration?,
+    val firstStart: Instant,
+    val lastEnd: Instant,
+)
+
+/** day: 화면에 보여 줄 하루 합산 (오늘 수면일, 오늘 기록이 없으면 어제). 없으면 null */
+data class SleepSummary(
+    val lastNight: SleepNight?,
+    val recent: List<Pair<LocalDate, Duration>>,
+    val day: SleepDay? = null,
+)
+
+/** 세션들을 수면일(종료 날짜)별로 합산. 최신 날짜가 먼저 */
+internal fun groupSleepDays(nights: List<SleepNight>): List<SleepDay> =
+    nights.groupBy { it.wakeDate }.map { (date, list) ->
+        val sessions = list.sortedBy { it.start }
+        fun sum(pick: (SleepNight) -> Duration?): Duration? {
+            val parts = sessions.mapNotNull(pick)
+            return if (parts.isEmpty()) null else parts.fold(Duration.ZERO) { a, d -> a + d }
+        }
+        SleepDay(
+            date = date,
+            sessions = sessions,
+            asleep = sessions.fold(Duration.ZERO) { a, n -> a + n.asleep },
+            deep = sum { it.deep },
+            light = sum { it.light },
+            rem = sum { it.rem },
+            awake = sum { it.awake },
+            firstStart = sessions.minOf { it.start },
+            lastEnd = sessions.maxOf { it.end },
+        )
+    }.sortedByDescending { it.date }
+
+/** 오늘 수면일이 있으면 그것, 없으면 어제 */
+internal fun pickDisplayDay(days: List<SleepDay>, today: LocalDate): SleepDay? =
+    days.firstOrNull { it.date == today } ?: days.firstOrNull { it.date == today.minusDays(1) }
 
 class SleepRepository(private val client: HealthConnectClient) {
 
@@ -84,5 +130,5 @@ internal fun buildSleepSummary(
     }
     val cutoff = now.minus(Duration.ofHours(36))
     val last = nights.filter { it.end >= cutoff && it.end <= now }.maxByOrNull { it.end }
-    return SleepSummary(last, recent)
+    return SleepSummary(last, recent, pickDisplayDay(groupSleepDays(nights), today))
 }

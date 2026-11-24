@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): RouteThumbnail이 점 0~1개/모든 점 같은 위치(범위 0)에서 0 나누기 없이 그리는지, WalkTab 목록이 RouteMap 대신 RouteThumbnail을 쓰는지, assembleDebug 성공하는지만. 결과: tasks/review-walk-thumb-result.md 첫 줄 PASS/FAIL, 3줄 이내.

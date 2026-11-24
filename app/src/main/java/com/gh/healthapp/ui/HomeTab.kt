@@ -51,12 +51,16 @@ fun HomeTab(state: StepsUiState.Loaded, onOpenTab: (Int) -> Unit) {
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val night = sleep?.lastNight
+            val day = sleep?.day
             Tile(
                 "수면",
-                if (night != null) formatDuration(night.asleep) else "기록 없음",
-                "어젯밤",
-                { onOpenTab(2) },
+                if (day != null) formatDuration(day.asleep) else "기록 없음",
+                when {
+                    day == null -> "수면 기록 없음"
+                    day.date == java.time.LocalDate.now() -> "오늘 수면"
+                    else -> "어제 수면"
+                },
+                { onOpenTab(3) },
                 Modifier.weight(1f),
             )
             val w = weight?.latest
@@ -64,7 +68,7 @@ fun HomeTab(state: StepsUiState.Loaded, onOpenTab: (Int) -> Unit) {
                 "체중",
                 if (w != null) String.format(Locale.KOREA, "%.1f kg", w.kg) else "기록 없음",
                 if (w != null) w.date.format(dateFmt) else "측정 없음",
-                { onOpenTab(3) },
+                { onOpenTab(4) },
                 Modifier.weight(1f),
             )
         }

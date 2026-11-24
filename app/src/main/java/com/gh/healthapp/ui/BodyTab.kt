@@ -1,5 +1,6 @@
 package com.gh.healthapp.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,8 @@ import com.gh.healthapp.MetricSummary
 import com.gh.healthapp.Section
 import com.gh.healthapp.StepsUiState
 import com.gh.healthapp.WeightSummary
+import com.gh.healthapp.ui.detail.DetailHeader
+import com.gh.healthapp.ui.detail.DetailKind
 import com.gh.healthapp.ui.charts.LinePoint
 import com.gh.healthapp.ui.charts.LineChart
 import java.time.LocalDate
@@ -41,23 +44,23 @@ private fun points(entries: List<Pair<LocalDate, Double>>): List<LinePoint> =
 
 /** 몸 탭: 체중 그래프 + 체성분 목록(체지방률 그래프) */
 @Composable
-fun BodyTab(state: StepsUiState.Loaded) {
+fun BodyTab(state: StepsUiState.Loaded, onOpenDetail: (DetailKind) -> Unit) {
     val weight = (state.weight as? Section.Ok)?.data
     val body = state.body.filterIsInstance<Section.Ok<MetricSummary>>().map { it.data }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (weight != null) WeightChartCard(weight)
-        if (body.isNotEmpty()) BodyChartCard(body)
+        if (weight != null) WeightChartCard(weight) { onOpenDetail(DetailKind.WEIGHT) }
+        if (body.isNotEmpty()) BodyChartCard(body) { onOpenDetail(DetailKind.BODY_COMPOSITION) }
     }
 }
 
 @Composable
-private fun WeightChartCard(w: WeightSummary) {
-    Card(Modifier.fillMaxWidth()) {
+private fun WeightChartCard(w: WeightSummary, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("체중", style = MaterialTheme.typography.titleMedium)
+            DetailHeader("체중")
             val latest = w.latest
             if (latest == null) {
                 Text("최근 30일 몸무게 기록이 없습니다.", style = MaterialTheme.typography.bodyMedium)
@@ -65,17 +68,17 @@ private fun WeightChartCard(w: WeightSummary) {
                 Text("${f1(latest.kg)} kg", style = MaterialTheme.typography.displaySmall)
                 Text(latest.date.format(longDate), style = MaterialTheme.typography.bodySmall)
                 changeText(w.changeKg)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                LineChart(points(w.recent.map { it.date to it.kg }), yFormatter = { f1(it.toDouble()) })
+                LineChart(points(w.recent.map { it.date to it.kg }), yFormatter = { f1(it.toDouble()) }, minYSpan = 6f)
             }
         }
     }
 }
 
 @Composable
-private fun BodyChartCard(list: List<MetricSummary>) {
-    Card(Modifier.fillMaxWidth()) {
+private fun BodyChartCard(list: List<MetricSummary>, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("체성분", style = MaterialTheme.typography.titleMedium)
+            DetailHeader("체성분")
             list.forEach { s ->
                 val latest: MetricEntry? = s.latest
                 if (latest == null) {
@@ -90,6 +93,7 @@ private fun BodyChartCard(list: List<MetricSummary>) {
                         LineChart(
                             points(s.recent.map { it.date to it.value }),
                             height = 120.dp,
+                            minYSpan = 10f,
                             yFormatter = { f1(it.toDouble()) },
                         )
                     }
