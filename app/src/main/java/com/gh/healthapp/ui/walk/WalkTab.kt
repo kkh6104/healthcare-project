@@ -21,6 +21,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gh.healthapp.data.HealthDatabase
@@ -41,6 +44,7 @@ import com.gh.healthapp.ui.map.RouteMap
 import com.gh.healthapp.walk.GeoPoint
 import com.gh.healthapp.walk.WalkPermissions
 import com.gh.healthapp.walk.WalkStatus
+import com.gh.healthapp.walk.WalkSettings
 import com.gh.healthapp.walk.WalkTracker
 import com.gh.healthapp.walk.formatElapsed
 import java.text.NumberFormat
@@ -67,6 +71,8 @@ fun WalkTab(onOpenWalk: (Long) -> Unit) {
 @Composable
 private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
     val context = LocalContext.current
+    val settings = remember(context) { WalkSettings(context) }
+    val settingsState by settings.state.collectAsState()
     val walkDao = remember { HealthDatabase.get(context).walkDao() }
     val sessions by walkDao.sessionsFlow().collectAsState(initial = emptyList())
     var denied by rememberSaveable { mutableStateOf(false) }
@@ -98,6 +104,18 @@ private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
                 },
                 modifier = Modifier.fillMaxWidth().height(72.dp),
             ) { Text("걷기 시작", style = MaterialTheme.typography.titleLarge) }
+        }
+        item {
+            Column {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("자동 일시정지", Modifier.weight(1f))
+                    Switch(checked = settingsState.autoPause, onCheckedChange = settings::setAutoPause)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("이어폰 음성 안내", Modifier.weight(1f))
+                    Switch(checked = settingsState.voice, onCheckedChange = settings::setVoice)
+                }
+            }
         }
         if (denied) {
             item {
@@ -160,9 +178,23 @@ private fun WalkRunning() {
     var confirmStop by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        RouteMap(live.points, Modifier.fillMaxWidth().weight(0.6f), followLast = true)
+        if (live.inVehicle || live.status == WalkStatus.AUTO_PAUSED) {
+            Surface(
+                modifier = Modifier.padding(8.dp),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    if (live.inVehicle) "이동 중 (걸음 없음) · 거리 제외" else "자동 일시정지됨 · 걸으면 다시 시작",
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+        RouteMap(live.points, Modifier.fillMaxWidth().weight(1f).clipToBounds(), followLast = true)
         Column(
-            Modifier.fillMaxWidth().weight(0.4f).padding(16.dp),
+            Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(

@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 
 data class GeoPoint(val lat: Double, val lon: Double)
 
-enum class WalkStatus { IDLE, RUNNING, PAUSED }
+enum class WalkStatus { IDLE, RUNNING, PAUSED, AUTO_PAUSED }
 
 data class WalkLiveState(
     val status: WalkStatus = WalkStatus.IDLE,
@@ -25,6 +25,7 @@ data class WalkLiveState(
     val activeMs: Long = 0,
     val steps: Int = 0,
     val startedAt: Long? = null,
+    val inVehicle: Boolean = false,
 )
 
 /** 화면이 걷기 상태를 보고 서비스에 명령을 보내는 창구 */

@@ -57,6 +57,8 @@ internal class DistanceTracker {
     private var anchor: RawPoint? = null
     private var consecutiveRejects = 0
 
+    fun excludeDistance(meters: Double) { distanceM = (distanceM - meters).coerceAtLeast(0.0) }
+
     /** 일시정지/재개 직후: 이전 점과 거리를 잇지 않는다 */
     fun resetAnchor() {
         anchor = null
@@ -93,12 +95,53 @@ internal class DistanceTracker {
         }
         consecutiveRejects = 0
         accepted++
-        val threshold = maxOf(MIN_STEP_M, (a.accuracy + p.accuracy) / 2.0 * 0.5)
+        val meanAccuracy = (a.accuracy + p.accuracy) / 2.0
+        val threshold = if (meanAccuracy <= 8.0) 2.0 else maxOf(MIN_STEP_M, meanAccuracy * 0.5)
         if (d >= threshold) {
             distanceM += d
             anchor = p
         }
         return PointResult.STORED
+    }
+}
+
+/** Inputs use elapsed realtime so wall-clock changes do not affect motion detection. */
+internal class MotionMonitor(start: Long) {
+    private val stepTimes = ArrayDeque<Long>()
+    private val positions = ArrayDeque<Pair<Long, RawPoint>>()
+    private var epoch = start
+    private var pauseEpoch = start
+    var autoPaused = false
+        private set
+    var inVehicle = false
+        private set
+    fun step(now: Long, count: Int = 1) { repeat(count.coerceAtLeast(0)) { stepTimes.addLast(now) } }
+    fun point(now: Long, point: RawPoint) { if (point.accuracy <= MAX_ACCURACY_M) positions.addLast(now to point) }
+    fun reset(now: Long) { stepTimes.clear(); positions.clear(); autoPaused = false; inVehicle = false; epoch = now; pauseEpoch = now }
+    fun evaluate(now: Long, hasSteps: Boolean, autoEnabled: Boolean) {
+        while (stepTimes.isNotEmpty() && stepTimes.first() < now - 20_000) stepTimes.removeFirst()
+        while (positions.size > 1 && positions.elementAt(1).first <= now - 20_000) positions.removeFirst()
+        val recent3 = stepTimes.count { it >= now - 3_000 }
+        val recent10 = stepTimes.count { it > now - 10_000 }
+        val recent20 = stepTimes.count { it > now - 20_000 }
+        fun displacement(window: Long): Double {
+            val last = positions.lastOrNull() ?: return 0.0
+            val first = positions.lastOrNull { it.first <= now - window } ?: positions.first()
+            return distanceM(first.second, last.second)
+        }
+        if (inVehicle) {
+            if (recent3 >= 3) reset(now)
+            return
+        }
+        if (hasSteps && now - epoch >= 20_000 && recent20 < 5 && displacement(20_000) >= 15.0) {
+            inVehicle = true; autoPaused = false; return
+        }
+        if (!autoEnabled) { autoPaused = false; return }
+        if (autoPaused) {
+            if ((hasSteps && recent3 >= 3) || displacement(10_000) >= 8.0) { autoPaused = false; pauseEpoch = now }
+        } else if (now - pauseEpoch >= 10_000 && (!hasSteps || recent10 == 0) && displacement(10_000) < 5.0) {
+            autoPaused = true
+        }
     }
 }
 

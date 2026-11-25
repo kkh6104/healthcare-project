@@ -7,6 +7,46 @@ import org.junit.Test
 
 class WalkMathTest {
 
+    @Test
+    fun autoPauseAndThreeStepsResume() {
+        val m = MotionMonitor(0)
+        m.point(0, pt(0, 37.0, 127.0))
+        m.point(10_000, pt(10, 37.0, 127.0))
+        m.evaluate(10_000, true, true)
+        assertTrue(m.autoPaused)
+        m.step(11_000); m.step(12_000); m.step(13_000)
+        m.evaluate(13_000, true, true)
+        assertFalse(m.autoPaused)
+    }
+
+    @Test
+    fun vehicleMovementIsExcludedAndWalkingResumes() {
+        val m = MotionMonitor(0)
+        val distance = DistanceTracker()
+        for (i in 0..15) {
+            val p = pt(i * 2L, 37.0 + i * 3.0 / 111_195.0, 127.0)
+            m.point(i * 2_000L, p)
+            m.evaluate(i * 2_000L, true, true)
+            if (!m.inVehicle && !m.autoPaused) distance.onPoint(p)
+            if (m.inVehicle) distance.excludeDistance(distance.distanceM)
+        }
+        assertTrue(m.inVehicle)
+        assertEquals(0.0, distance.distanceM, 0.0)
+        m.step(31_000); m.step(32_000); m.step(33_000)
+        m.evaluate(33_000, true, true)
+        assertFalse(m.inVehicle)
+        distance.resetAnchor()
+        distance.onPoint(pt(34, 37.001, 127.0))
+        assertEquals(0.0, distance.distanceM, 0.0)
+    }
+
+    @Test
+    fun accurateStraightWalkWithinFivePercent() {
+        val tr = DistanceTracker()
+        for (i in 0..50) tr.onPoint(pt(i * 2L, 37.0 + i * 2.2 / 111_195.0, 127.0, 5f))
+        assertEquals(110.0, tr.distanceM, 5.5)
+    }
+
     private fun pt(timeSec: Long, lat: Double, lon: Double, acc: Float = 5f) =
         RawPoint(timeSec * 1000, lat, lon, acc)
 

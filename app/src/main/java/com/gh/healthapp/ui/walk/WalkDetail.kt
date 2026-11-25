@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gh.healthapp.data.HealthDatabase
@@ -69,7 +70,7 @@ fun WalkDetail(sessionId: Long, onDeleted: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        RouteMap(points, Modifier.fillMaxWidth().height(320.dp))
+        RouteMap(points, Modifier.fillMaxWidth().height(320.dp).clipToBounds())
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(start.format(dayFmt), style = MaterialTheme.typography.titleMedium)
             Text("${timeFmt.format(start)} ~ ${timeFmt.format(end)}", style = MaterialTheme.typography.bodyMedium)

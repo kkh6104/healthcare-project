@@ -59,6 +59,17 @@ class WalkService : Service() {
     private var sessionId: Long = 0
     private var startedAt = 0L
     private var status = WalkStatus.IDLE
+    private val settings by lazy { WalkSettings(applicationContext) }
+    private var voice: WalkVoice? = null
+    private var motion = MotionMonitor(SystemClock.elapsedRealtime())
+    private var inVehicle = false
+    private var autoPausedMs = 0L
+    private var vehicleMs = 0L
+    private var excludedSince = 0L
+    private var vehicleDistM = 0.0
+    private var lastVehiclePoint: RawPoint? = null
+    private val distanceHistory = ArrayDeque<Triple<Long, Double, Long>>()
+    private var detectorRegistered = false
 
     // 활동 시간: 누적 + (RUNNING이면) 지금까지의 구간
     private var activeAccumMs = 0L
@@ -83,7 +94,7 @@ class WalkService : Service() {
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            if (status != WalkStatus.RUNNING) return
+            if (status != WalkStatus.RUNNING && status != WalkStatus.AUTO_PAUSED) return
             result.locations.forEach { loc ->
                 val p = RawPoint(
                     time = loc.time,
@@ -92,6 +103,15 @@ class WalkService : Service() {
                     accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE,
                     altitude = if (loc.hasAltitude()) loc.altitude else null,
                 )
+                val now = SystemClock.elapsedRealtime()
+                motion.point(now, p)
+                updateMotion(now)
+                if (inVehicle) {
+                    lastVehiclePoint?.let { vehicleDistM += distanceM(it, p) }
+                    lastVehiclePoint = p
+                    return@forEach
+                }
+                if (status == WalkStatus.AUTO_PAUSED) return@forEach
                 when (tracker.onPoint(p)) {
                     PointResult.DROPPED -> return@forEach
                     PointResult.ANCHOR_RESET -> Log.i("HCDEBUG", "walk anchor reset after ${ANCHOR_RESET_AFTER} rejects")
@@ -106,6 +126,8 @@ class WalkService : Service() {
                     sessionId = sessionId, time = p.time, lat = p.lat, lon = p.lon,
                     accuracy = p.accuracy, altitude = p.altitude,
                 )
+                distanceHistory.addLast(Triple(now, distanceM, activeMs()))
+                while (distanceHistory.size > 1 && distanceHistory.elementAt(1).first <= now - 20_000) distanceHistory.removeFirst()
             }
             publish()
             flushIfNeeded()
@@ -114,10 +136,20 @@ class WalkService : Service() {
 
     private val stepListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
-            if (status != WalkStatus.RUNNING) return
+            if (status != WalkStatus.RUNNING && status != WalkStatus.AUTO_PAUSED) return
+            val now = SystemClock.elapsedRealtime()
+            if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
+                motion.step(now)
+                if (!stepListenerRegistered) steps++
+                updateMotion(now)
+                return
+            }
             val v = event.values.firstOrNull() ?: return
             val base = stepBase ?: v.also { stepBase = it }
-            steps = stepsAccum + (v - base).toInt().coerceAtLeast(0)
+            val newSteps = stepsAccum + (v - base).toInt().coerceAtLeast(0)
+            if (!detectorRegistered && newSteps > steps) motion.step(now, newSteps - steps)
+            steps = newSteps
+            updateMotion(now)
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -168,6 +200,8 @@ class WalkService : Service() {
             throw e
         }
         isRunning = true
+        voice = WalkVoice(applicationContext)
+        motion.reset(SystemClock.elapsedRealtime())
         scope.launch {
             sessionId = withDb {
                 db.walkDao().insertSession(
@@ -195,7 +229,9 @@ class WalkService : Service() {
     }
 
     private fun pauseSession() {
-        if (status != WalkStatus.RUNNING) return
+        if (status != WalkStatus.RUNNING && status != WalkStatus.AUTO_PAUSED) return
+        finishExcluded(SystemClock.elapsedRealtime())
+        inVehicle = false
         activeAccumMs = activeMs()
         runningSince = 0L
         status = WalkStatus.PAUSED
@@ -216,6 +252,7 @@ class WalkService : Service() {
     private fun resumeSession() {
         if (status != WalkStatus.PAUSED) return
         status = WalkStatus.RUNNING
+        motion.reset(SystemClock.elapsedRealtime())
         runningSince = SystemClock.elapsedRealtime()
         tracker.resetAnchor() // 일시정지 동안 움직인 거리는 잇지 않는다
         rawTail.clear()
@@ -232,6 +269,7 @@ class WalkService : Service() {
     private fun stopSession() {
         if (status == WalkStatus.IDLE) return
         activeAccumMs = activeMs()
+        finishExcluded(SystemClock.elapsedRealtime())
         runningSince = 0L
         status = WalkStatus.IDLE
         fused.removeLocationUpdates(locationCallback)
@@ -240,7 +278,7 @@ class WalkService : Service() {
         Log.i(
             "HCDEBUG",
             "walk end dist=${distanceM.toInt()}m steps=${steps} stepDist≈${(steps * 0.7).toInt()}(=steps*0.7) " +
-                "accepted=${tracker.accepted} rejected=${tracker.rejected}",
+                "accepted=${tracker.accepted} rejected=${tracker.rejected} autoPausedMs=$autoPausedMs vehicleMs=$vehicleMs vehicleDistM=$vehicleDistM",
         )
         scope.launch {
             flush()
@@ -275,18 +313,67 @@ class WalkService : Service() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED
         ) return
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val sensor = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) ?: return
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
         try {
-            stepListenerRegistered = sm.registerListener(stepListener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            stepListenerRegistered = sensor != null && sm.registerListener(stepListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, 0)
+            val detector = sm.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+            detectorRegistered = detector != null && sm.registerListener(stepListener, detector, SensorManager.SENSOR_DELAY_NORMAL, 0)
         } catch (e: SecurityException) {
             Log.w(TAG, "step sensor denied")
         }
     }
 
     private fun unregisterSteps() {
-        if (!stepListenerRegistered) return
+        if (!stepListenerRegistered && !detectorRegistered) return
         (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(stepListener)
         stepListenerRegistered = false
+        detectorRegistered = false
+    }
+
+    private fun finishExcluded(now: Long) {
+        if (excludedSince == 0L) return
+        if (inVehicle) vehicleMs += now - excludedSince else autoPausedMs += now - excludedSince
+        excludedSince = 0L
+    }
+
+    private fun updateMotion(now: Long) {
+        if (status != WalkStatus.RUNNING && status != WalkStatus.AUTO_PAUSED) return
+        val wasAuto = status == WalkStatus.AUTO_PAUSED
+        val wasVehicle = inVehicle
+        motion.evaluate(now, stepListenerRegistered || detectorRegistered, settings.getAutoPause())
+        val newVehicle = motion.inVehicle
+        val newAuto = motion.autoPaused && !newVehicle
+        if (wasAuto == newAuto && wasVehicle == newVehicle) return
+        if (wasAuto || wasVehicle) finishExcluded(now) else {
+            activeAccumMs = activeMs()
+            runningSince = 0L
+        }
+        if (newVehicle && !wasVehicle) {
+            val before = distanceHistory.firstOrNull()?.second ?: distanceM
+            val removed = (distanceM - before).coerceAtLeast(0.0)
+            tracker.excludeDistance(removed)
+            vehicleDistM += removed
+            // The detection window is retrospectively classified as vehicle time.
+            val elapsed = (activeAccumMs - (distanceHistory.firstOrNull()?.third ?: activeAccumMs)).coerceIn(0, 20_000)
+            activeAccumMs = (activeAccumMs - elapsed).coerceAtLeast(0)
+            vehicleMs += elapsed
+            Log.i("HCDEBUG", "walk vehicle on")
+        }
+        if (wasVehicle && !newVehicle) Log.i("HCDEBUG", "walk vehicle off")
+        if (wasAuto != newAuto && !newVehicle && !wasVehicle) {
+            Log.i("HCDEBUG", "walk autoPause ${if (newAuto) "on" else "off"}")
+            voice?.say(if (newAuto) "운동을 일시정지했습니다" else "운동을 다시 시작합니다", settings.getVoice())
+        }
+        inVehicle = newVehicle
+        status = if (newAuto) WalkStatus.AUTO_PAUSED else WalkStatus.RUNNING
+        if (newAuto || newVehicle) excludedSince = now else {
+            runningSince = now
+            tracker.resetAnchor()
+            distanceHistory.clear()
+            lastVehiclePoint = null
+        }
+        publish()
+        notifyNow()
     }
 
     // ---- 상태/저장/알림 ----
@@ -304,6 +391,7 @@ class WalkService : Service() {
                 activeMs = activeMs(),
                 steps = steps,
                 startedAt = startedAt,
+                inVehicle = inVehicle,
             )
         )
     }
@@ -314,7 +402,8 @@ class WalkService : Service() {
         tickJob = scope.launch {
             while (true) {
                 delay(1000)
-                if (status == WalkStatus.RUNNING) {
+                if (status == WalkStatus.RUNNING || status == WalkStatus.AUTO_PAUSED) {
+                    updateMotion(SystemClock.elapsedRealtime())
                     publish()
                     flushIfNeeded()
                 }
@@ -365,7 +454,7 @@ class WalkService : Service() {
 
     private fun buildNotification(): Notification {
         val km = String.format(Locale.KOREAN, "%.2fkm", distanceM / 1000.0)
-        val title = if (status == WalkStatus.PAUSED) "일시정지" else "걷는 중"
+        val title = when { inVehicle -> "이동 중(걸음 없음)"; status == WalkStatus.AUTO_PAUSED -> "자동 일시정지"; status == WalkStatus.PAUSED -> "일시정지"; else -> "걷는 중" }
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -398,6 +487,8 @@ class WalkService : Service() {
         fused.removeLocationUpdates(locationCallback)
         unregisterSteps()
         isRunning = false
+        voice?.shutdown()
+        voice = null
         scope.cancel()
         super.onDestroy()
     }
