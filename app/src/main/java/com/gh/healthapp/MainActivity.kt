@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,6 +59,7 @@ import com.gh.healthapp.ui.SettingsScreen
 import com.gh.healthapp.ui.SleepTab
 import com.gh.healthapp.ui.walk.WalkDetail
 import com.gh.healthapp.ui.walk.WalkTab
+import com.gh.healthapp.ui.chat.ChatTab
 import com.gh.healthapp.walk.WalkStatus
 import com.gh.healthapp.walk.WalkTracker
 import com.gh.healthapp.data.DetailReader
@@ -91,6 +94,7 @@ private val TABS = listOf(
     TabItem("걷기", HealthIcons.Walk),
     TabItem("수면", HealthIcons.Sleep),
     TabItem("몸", HealthIcons.Weight),
+    TabItem("AI", Icons.Default.Info),
 )
 
 @Composable
@@ -258,7 +262,7 @@ private fun LoadedShell(
             }
         },
     ) { innerPadding ->
-        Column(Modifier.padding(innerPadding).fillMaxSize()) {
+        Column(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()) {
             val banner = s.banner
             if (banner != null && banner != dismissedBanner) {
                 BannerCard(banner, onDismiss = { dismissedBanner = banner })
@@ -278,6 +282,7 @@ private fun LoadedShell(
                     onRefresh = onRefresh,
                     onImport = onImport,
                     onDiagnose = onDiagnose,
+                    onRequestAiConsent = { showSettings = false; tab = 5 },
                 )
             } else {
                 when (tab) {
@@ -285,7 +290,8 @@ private fun LoadedShell(
                     1 -> ActivityTab(s, onOpenDetail = { detail = it })
                     2 -> WalkTab(onOpenWalk = { walkDetailId = it })
                     3 -> SleepTab(s, onOpenDetail = { detail = it })
-                    else -> BodyTab(s, onOpenDetail = { detail = it })
+                    4 -> BodyTab(s, onOpenDetail = { detail = it })
+                    5 -> ChatTab()
                 }
             }
         }

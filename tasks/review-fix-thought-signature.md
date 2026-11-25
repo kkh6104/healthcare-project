@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/fix-thought-signature.md 기준 — 모델 parts 원본 보존 재전송(thoughtSignature 포함), 병렬 호출 처리, 400 로그에 키·사용자 내용 없음, 테스트 존재, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-fix-thought-signature-result.md 첫 줄 PASS/FAIL, 4줄 이내.

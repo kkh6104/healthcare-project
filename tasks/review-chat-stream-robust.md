@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/chat-stream-robust.md 기준 — 진단 로그(내용·키 없음), 깨진 SSE 줄 건너뛰기, finishReason 처리, 스트림 중단 시 자동 1회 재시도·부분 텍스트 저장, 재시도 무한 반복 없음, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-chat-stream-robust-result.md 첫 줄 PASS/FAIL, 4줄 이내.

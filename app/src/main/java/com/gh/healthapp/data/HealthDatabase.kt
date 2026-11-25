@@ -14,13 +14,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncStateEntity::class,
         WalkSessionEntity::class,
         WalkPointEntity::class,
+        ChatMessageEntity::class,
+        KbChunkEntity::class,
     ],
-    version = 2,
+    version = 4,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun dao(): HealthDao
     abstract fun walkDao(): WalkDao
+    abstract fun chatDao(): ChatDao
+    abstract fun kbDao(): KbDao
 
     companion object {
         @Volatile private var instance: HealthDatabase? = null
@@ -54,13 +58,29 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `chat_message` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `role` TEXT NOT NULL, `text` TEXT NOT NULL, `time` INTEGER NOT NULL)")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `chat_message` ADD COLUMN `sourcesJson` TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `kb_chunk` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `docId` TEXT NOT NULL, `title` TEXT NOT NULL, `heading` TEXT NOT NULL, `text` TEXT NOT NULL, `source` TEXT NOT NULL, `sourceUrl` TEXT, `vector` BLOB NOT NULL, `contentHash` TEXT NOT NULL)")
+            }
+        }
+
         fun get(context: Context): HealthDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     HealthDatabase::class.java,
                     "health.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also {
+                    instance = it
+                    com.gh.healthapp.chat.KnowledgeBase.start(context.applicationContext)
+                }
             }
     }
 }

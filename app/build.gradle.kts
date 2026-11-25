@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -11,6 +13,11 @@ android {
     }
 
     defaultConfig {
+        val properties = Properties()
+        rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { properties.load(it) }
+        val apiKey = properties.getProperty("GEMINI_API_KEY", "")
+        val escapedKey = apiKey.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$escapedKey\"")
         applicationId = "com.gh.healthapp"
         minSdk = 28
         targetSdk = 37
@@ -40,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -62,6 +70,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

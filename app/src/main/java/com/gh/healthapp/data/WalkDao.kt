@@ -37,4 +37,10 @@ interface WalkDao {
 
     @Query("SELECT * FROM walk_session WHERE status = 'DONE' AND startTime >= :from AND startTime < :to")
     suspend fun doneBetween(from: Long, to: Long): List<WalkSessionEntity>
+
+    @Query("SELECT * FROM walk_session WHERE status = 'DONE' AND startTime >= :from AND startTime < :to ORDER BY startTime DESC LIMIT 100")
+    suspend fun recentDoneBetween(from: Long, to: Long): List<WalkSessionEntity>
+
+    @Query("SELECT MIN(startTime) FROM walk_session WHERE status = 'DONE'") suspend fun firstDone(): Long?
+    @Query("SELECT MAX(startTime) FROM walk_session WHERE status = 'DONE'") suspend fun lastDone(): Long?
 }

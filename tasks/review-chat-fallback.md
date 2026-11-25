@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/chat-fallback.md 기준 — 5xx 재시도 후 다음 모델 폴백, 질문 내 모델 유지, 모두 실패 시 Busy, API_KEY_INVALID 분류, UI when 분기 누락 없음, 키 로그 없음, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-chat-fallback-result.md 첫 줄 PASS/FAIL, 4줄 이내.

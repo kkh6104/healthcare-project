@@ -43,6 +43,12 @@ interface HealthDao {
     @Query("SELECT MAX(startTime) FROM health_record")
     suspend fun maxRecordTime(): Long?
 
+    @Query("SELECT type, MIN(startTime) AS firstTime, MAX(startTime) AS lastTime FROM health_record GROUP BY type")
+    suspend fun recordRanges(): List<RecordRange>
+
+    @Query("SELECT * FROM health_record WHERE type = :type AND endTime >= :from AND endTime < :to ORDER BY endTime ASC")
+    suspend fun recordsEndingBetween(type: String, from: Long, to: Long): List<HealthRecordEntity>
+
     @Upsert
     suspend fun upsertSummaries(list: List<DailySummaryEntity>)
 
