@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/fix-rag-zero.md 기준 — 원인 설명이 코드와 맞는지, 질문/색인 임베딩 차원 일치·불일치 시 재색인, 임베딩 실패 시 RAG 없이 진행+로그, top이 필터 전 최고값, omni 모델 제외, 키·내용 로그 없음, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-fix-rag-zero-result.md 첫 줄 PASS/FAIL, 4줄 이내.

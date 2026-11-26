@@ -7,6 +7,8 @@ import com.gh.healthapp.BuildConfig
 import com.gh.healthapp.data.ChatMessageEntity
 import com.gh.healthapp.data.HealthDatabase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,9 +49,9 @@ class ChatRepository(context: Context) {
     fun hasApiKey(): Boolean = BuildConfig.GEMINI_API_KEY.isNotBlank()
     suspend fun clear() = mutex.withLock { dao.clear() }
 
-    suspend fun send(userText: String): Result<Unit> = mutex.withLock { sendLocked(userText, null) }
+    suspend fun send(userText: String): Result<Unit> = withContext(Dispatchers.IO) { mutex.withLock { sendLocked(userText, null) } }
 
-    suspend fun resend(userMessageId: Long): Result<Unit> = mutex.withLock { sendLocked(null, userMessageId) }
+    suspend fun resend(userMessageId: Long): Result<Unit> = withContext(Dispatchers.IO) { mutex.withLock { sendLocked(null, userMessageId) } }
 
     private suspend fun sendLocked(newText: String?, userMessageId: Long?): Result<Unit> {
         val started = SystemClock.elapsedRealtime()
@@ -66,7 +68,7 @@ class ChatRepository(context: Context) {
                 throw ChatException(ChatError.Other("이미 응답한 메시지입니다"))
             if (!ChatConsent.isGiven(context)) throw ChatException(ChatError.Other("데이터 전송 동의가 필요합니다"))
             if (!hasApiKey()) throw ChatException(ChatError.NoKey)
-            val previous = records.filter { it.id < id }.takeLast(20)
+            val previous = records.filter { it.id < id }.takeLast(12)
             // Only complete turns are sent; failed user messages remain in local history.
             val turns = mutableListOf<ChatMessage>()
             var pending: ChatMessage? = null
@@ -77,10 +79,12 @@ class ChatRepository(context: Context) {
             }
             val tools = HealthTools(db)
             val today = LocalDate.now()
-            val summary = tools.execute("get_daily_summary", JSONObject().put("start_date", today.minusDays(6).toString()).put("end_date", today.toString()))
+            val summary = JSONObject().put("csv", formatDailyCsv(tools.execute("get_daily_summary", JSONObject().put("start_date", today.minusDays(6).toString()).put("end_date", today.toString()))))
             val sources = KnowledgeBase.search(context, target.text)
-            client = GeminiClient(BuildConfig.GEMINI_API_KEY, tools) { attempt, retrying -> mutableProgress.value = ChatProgress(attempt, 5, retrying, startedAt) }
-            val answer = client.generate(turns.takeLast(20), target.text, summary, sources, today)
+            val models = cachedModels(context, BuildConfig.GEMINI_API_KEY)
+            Log.i("HCDEBUG", "chat model order=${ModelHistory(context.getSharedPreferences("chat_model_history", Context.MODE_PRIVATE)).order(models)}")
+            client = GeminiClient(BuildConfig.GEMINI_API_KEY, tools, models, { attempt, retrying -> mutableProgress.value = ChatProgress(attempt, 5, retrying, startedAt) }, ModelHistory(context.getSharedPreferences("chat_model_history", Context.MODE_PRIVATE)))
+            val answer = client.generate(turns.takeLast(12), target.text, summary, sources, today)
             val used = Regex("\\[(\\d+)\\]").findAll(answer).mapNotNull { it.groupValues[1].toIntOrNull() }.toSet()
             val citedSources = sources.filter { it.index in used }
             dao.insert(ChatMessageEntity(role = "model", text = answer, time = System.currentTimeMillis(), sourcesJson = sourcesToJson(citedSources)))

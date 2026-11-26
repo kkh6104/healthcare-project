@@ -121,11 +121,28 @@ object KnowledgeBase {
             val state = status(app)
             if (!state.indexed) { requestIndex(app); Log.i("HCDEBUG", "chat rag hits=0 top=0.00"); return@withContext emptyList() }
             if (state.chunks == 0 || BuildConfig.GEMINI_API_KEY.isBlank()) { Log.i("HCDEBUG", "chat rag hits=0 top=0.00"); return@withContext emptyList() }
+            val indexRows = HealthDatabase.get(app).kbDao().all()
+            val indexDims = indexRows.map { runCatching { bytesVector(it.vector).size }.getOrDefault(-1) }.distinct()
+            Log.i("HCDEBUG", "chat rag index dim=${indexDims.joinToString(",")} n=${indexRows.size}")
+            val embedStarted = SystemClock.elapsedRealtime()
             val vector = EmbeddingClient(BuildConfig.GEMINI_API_KEY).embed(query, true)
-            val hits = rankChunks(vector, HealthDatabase.get(app).kbDao().all())
-            Log.i("HCDEBUG", "chat rag hits=${hits.size} top=${String.format(Locale.US, "%.2f", hits.firstOrNull()?.second ?: 0.0)}")
-            hits.mapIndexed { i, (row, _) -> KbSource(i + 1, row.title, row.heading, row.source, row.sourceUrl, row.text) }
+            Log.i("HCDEBUG", "chat rag embed ok dim=${vector.size} ms=${SystemClock.elapsedRealtime() - embedStarted}")
+            val ranked = rankChunksDetailed(vector, indexRows)
+            if (ranked.dimensionMismatch) {
+                Log.w("HCDEBUG", "chat rag dim mismatch query=${vector.size} index=${indexDims.joinToString(",")}")
+                prefs(app).edit().remove("hash").apply()
+                requestIndex(app)
+                Log.i("HCDEBUG", "chat rag hits=0 top=0.00")
+                return@withContext emptyList()
+            }
+            Log.i("HCDEBUG", "chat rag hits=${ranked.hits.size} top=${String.format(Locale.US, "%.2f", ranked.topSimilarity)}")
+            ranked.hits.mapIndexed { i, (row, _) -> KbSource(i + 1, row.title, row.heading, row.source, row.sourceUrl, row.text) }
         } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { Log.i("HCDEBUG", "chat rag hits=0 top=0.00"); emptyList() }
+        catch (e: Exception) {
+            val code = (e as? IOException)?.message?.let { Regex("HTTP (\\d+)").find(it)?.groupValues?.get(1) } ?: "none"
+            Log.w("HCDEBUG", "chat rag embed fail ex=${e.javaClass.simpleName} code=$code")
+            Log.i("HCDEBUG", "chat rag hits=0 top=0.00")
+            emptyList()
+        }
     }
 }

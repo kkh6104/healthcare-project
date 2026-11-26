@@ -70,11 +70,16 @@ internal fun cosine(a: FloatArray, b: FloatArray): Double {
     for (i in a.indices) { dot += a[i].toDouble() * b[i]; aa += a[i].toDouble() * a[i]; bb += b[i].toDouble() * b[i] }
     return if (aa == 0.0 || bb == 0.0) 0.0 else dot / sqrt(aa * bb)
 }
-internal const val KB_THRESHOLD = 0.55
-internal fun rankChunks(query: FloatArray, chunks: List<KbChunkEntity>): List<Pair<KbChunkEntity, Double>> = chunks.mapNotNull {
-    val score = runCatching { cosine(query, bytesVector(it.vector)) }.getOrDefault(0.0)
-    if (score >= KB_THRESHOLD) it to score else null
-}.sortedByDescending { it.second }.take(4)
+internal const val KB_THRESHOLD = 0.6
+internal data class RankedChunks(val hits: List<Pair<KbChunkEntity, Double>>, val topSimilarity: Double, val dimensionMismatch: Boolean)
+internal fun rankChunksDetailed(query: FloatArray, chunks: List<KbChunkEntity>): RankedChunks {
+    val vectors = chunks.map { it to runCatching { bytesVector(it.vector) }.getOrNull() }
+    val mismatch = vectors.any { (_, vector) -> vector == null || vector.size != query.size }
+    if (mismatch || query.isEmpty()) return RankedChunks(emptyList(), 0.0, mismatch)
+    val scored = vectors.mapNotNull { (row, vector) -> vector?.let { row to cosine(query, it) } }.sortedByDescending { it.second }
+    return RankedChunks(scored.filter { it.second >= KB_THRESHOLD }.take(3).map { (row, score) -> row.copy(text = row.text.take(400)) to score }, scored.firstOrNull()?.second ?: 0.0, false)
+}
+internal fun rankChunks(query: FloatArray, chunks: List<KbChunkEntity>): List<Pair<KbChunkEntity, Double>> = rankChunksDetailed(query, chunks).hits
 
 internal fun sourcesToJson(sources: List<KbSource>): String = JSONArray().apply { sources.forEach { s -> put(JSONObject().apply {
     put("index", s.index); put("title", s.title); put("heading", s.heading); put("source", s.source); put("sourceUrl", s.sourceUrl); put("text", s.text)

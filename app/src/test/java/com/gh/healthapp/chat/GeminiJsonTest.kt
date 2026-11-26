@@ -10,6 +10,15 @@ import java.net.SocketTimeoutException
 import java.io.IOException
 
 class GeminiJsonTest {
+    @Test fun modelCatalogExcludesOmni() {
+        val payload = JSONObject().put("models", JSONArray()
+            .put(JSONObject().put("name", "models/gemini-3-flash-omni").put("supportedGenerationMethods", JSONArray().put("generateContent")))
+            .put(JSONObject().put("name", "models/gemini-2.5-flash").put("supportedGenerationMethods", JSONArray().put("generateContent"))))
+        assertEquals(listOf("gemini-2.5-flash"), parseFlashModels(payload))
+    }
+    @Test fun cachedOmniNamesAreFilteredAndSorted() {
+        assertEquals(listOf("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash"), sortFlashModels(listOf("gemini-omni-flash-preview", "gemini-flash-latest", "gemini-omni-1.2-flash", "gemini-2.5-flash", "gemini-flash-lite-latest")))
+    }
     @Test fun requestContainsInstructionAndFiveTools() {
         val request = GeminiJson.request(JSONArray().put(GeminiJson.content("user", "안녕")))
         assertTrue(request.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text").contains("진단"))
@@ -161,7 +170,7 @@ class GeminiJsonTest {
         assertEquals("\n\n(답변이 길어 여기까지만 표시했어요)", finishSuffix(stream.finishReason))
         assertEquals("\n\n(답변이 중간에 끊겼어요)", finishSuffix("SAFETY"))
         assertEquals("", finishSuffix("STOP"))
-        assertEquals(2048, GeminiJson.request(JSONArray()).getJSONObject("generationConfig").getInt("maxOutputTokens"))
+        assertEquals(1024, GeminiJson.request(JSONArray()).getJSONObject("generationConfig").getInt("maxOutputTokens"))
     }
 
     @Test fun brokenStreamRetriesWithoutUsingFirstPartial() = runBlocking {

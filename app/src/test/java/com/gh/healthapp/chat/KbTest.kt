@@ -26,9 +26,17 @@ class KbTest {
         fun row(id: Long, vector: FloatArray) = KbChunkEntity(id, "a", "t", "h", "x", "s", null, vectorBytes(vector), "hash")
         val rows = listOf(row(1, floatArrayOf(-1f, 0f)), row(2, floatArrayOf(1f, 0f))) + (3L..7L).map { row(it, floatArrayOf(1f, 0.2f)) }
         val hits = rankChunks(floatArrayOf(1f, 0f), rows)
-        assertEquals(4, hits.size)
+        assertEquals(3, hits.size)
         assertEquals(2L, hits.first().first.id)
         assertTrue(hits.all { it.second >= KB_THRESHOLD })
+    }
+    @Test fun rankReportsMismatchAndPreThresholdTopScore() {
+        fun row(id: Long, vector: FloatArray) = KbChunkEntity(id, "a", "t", "h", "x", "s", null, vectorBytes(vector), "hash")
+        val mismatch = rankChunksDetailed(floatArrayOf(1f, 0f), listOf(row(1, floatArrayOf(1f))))
+        assertTrue(mismatch.dimensionMismatch)
+        val below = rankChunksDetailed(floatArrayOf(1f, 0f), listOf(row(2, floatArrayOf(0.2f, 1f))))
+        assertTrue(below.hits.isEmpty())
+        assertTrue(below.topSimilarity > 0.0)
     }
     @Test fun sourcesRoundTripAndDateInstruction() {
         val sources = listOf(KbSource(1, "제목", "절", "출처", null, "내용"), KbSource(2, "t", "h", "s", "https://example.org", "x"))

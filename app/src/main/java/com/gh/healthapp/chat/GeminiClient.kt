@@ -16,14 +16,78 @@ import kotlin.random.Random
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
+import android.content.Context
+import android.content.SharedPreferences
 object GeminiConfig {
-    val MODELS = listOf("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash")
+    val MODELS = listOf("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash")
     fun endpoint(model: String) = "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse"
 }
 
+internal object ModelCatalog {
+    const val FILTER_VERSION = 2
+    suspend fun current(context: Context, key: String): List<String> = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("chat_model_catalog", Context.MODE_PRIVATE)
+        val cached = prefs.getString("models", null)
+        val updated = prefs.getLong("updated", 0L)
+        if (cached != null && prefs.getInt("filter_version", 0) == FILTER_VERSION && System.currentTimeMillis() - updated < 86_400_000L) {
+            runCatching { JSONArray(cached).let { a -> sortFlashModels((0 until a.length()).map { a.getString(it) }) } }.getOrDefault(GeminiConfig.MODELS)
+        }
+        else try {
+            val conn = URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200").openConnection() as HttpURLConnection
+            conn.connectTimeout = 8_000; conn.readTimeout = 8_000; conn.setRequestProperty("x-goog-api-key", key)
+            val models = try { conn.inputStream.bufferedReader().use { parseFlashModels(JSONObject(it.readText())) } } finally { conn.disconnect() }
+            prefs.edit().putString("models", JSONArray(models).toString()).putLong("updated", System.currentTimeMillis()).putInt("filter_version", FILTER_VERSION).apply()
+            Log.i("HCDEBUG", "chat models fetched n=${models.size}")
+            models
+        } catch (e: Exception) { Log.w("HCDEBUG", "chat models fetch fail ex=${e.javaClass.simpleName}"); GeminiConfig.MODELS }
+    }
+}
+
+internal data class ModelResult(val success: Boolean, val busy: Boolean, val elapsedMs: Long, val at: Long)
+internal class ModelHistory(private val prefs: SharedPreferences, private val now: () -> Long = System::currentTimeMillis) {
+    fun record(model: String, result: ModelResult) { prefs.edit().putString(model, "${result.success},${result.busy},${result.elapsedMs},${result.at}").apply() }
+    fun order(models: List<String>): List<String> {
+        val values = models.associateWith { m -> prefs.getString(m, null)?.split(',') }
+        return models.sortedWith(compareByDescending<String> { m -> values[m]?.let { it.size == 4 && it[0] == "true" && now() - it[3].toLongOrNull().orZero() < 1_800_000 } == true }.thenBy { m -> values[m]?.let { it.size == 4 && it[1] == "true" && now() - it[3].toLongOrNull().orZero() < 300_000 } == true })
+    }
+    private fun Long?.orZero() = this ?: 0L
+}
+
+internal fun parseFlashModels(payload: JSONObject): List<String> {
+    val candidates = mutableListOf<String>()
+    val models = payload.optJSONArray("models") ?: return GeminiConfig.MODELS
+    for (i in 0 until models.length()) {
+        val m = models.optJSONObject(i) ?: continue
+        val name = m.optString("name").removePrefix("models/")
+        val methods = m.optJSONArray("supportedGenerationMethods") ?: JSONArray()
+        if ("generateContent" !in (0 until methods.length()).map { methods.optString(it) }) continue
+        if (!name.contains("flash", true) || listOf("image", "tts", "audio", "live", "embedding", "omni").any { name.contains(it, true) }) continue
+        candidates.add(name)
+    }
+    return sortFlashModels(candidates).ifEmpty { GeminiConfig.MODELS }
+}
+
+internal suspend fun cachedModels(context: Context, key: String): List<String> = ModelCatalog.current(context, key)
+
+internal fun formatDailyCsv(summary: JSONObject): String {
+    val rows = summary.optJSONArray("days") ?: return "date,steps,sleep_min,hr_avg,weight"
+    return buildString {
+        appendLine("date,steps,sleep_min,hr_avg,weight")
+        for (i in 0 until rows.length()) {
+            val r = rows.optJSONObject(i) ?: continue
+            appendLine(listOf("date", "steps", "sleep_minutes", "hr_avg", "weight_kg").joinToString(",") { r.opt(it)?.toString() ?: "" })
+        }
+    }.trimEnd()
+}
+
+internal fun sortFlashModels(models: List<String>): List<String> {
+    val filtered = models.filter { it.contains("flash", true) && listOf("image", "tts", "audio", "live", "embedding", "omni").none { blocked -> it.contains(blocked, true) } }
+    val aliases = listOf("gemini-flash-lite-latest", "gemini-flash-latest").filter { it in filtered }
+    return (aliases + filtered.filterNot { it in aliases }.sortedDescending().take(2)).take(4)
+}
+
 internal object GeminiJson {
-    const val INSTRUCTION = "너는 사용자의 개인 건강 데이터 도우미다. 한국어로 짧고 친근하게 숫자 근거를 들어 설명한다. 생활 습관, 운동, 수면 위생에 대한 일반적 조언은 적극적으로 하되 진단이나 약 추천은 하지 않는다. 걱정되는 패턴에는 의료 전문가 상담을 권한다. 측정 한계를 설명할 수 있다. 데이터가 없으면 지어내지 말고 없다고 말하며 필요한 기간은 도구로 조회한다."
+    const val INSTRUCTION = "너는 사용자의 개인 건강 데이터 도우미다. 한국어로 짧고 친근하게 숫자 근거를 들어 설명한다. 답은 핵심 위주로 10줄 이내로 하고, 사용자가 자세히 요청하면 길게 답한다. 생활 습관, 운동, 수면 위생에 대한 일반적 조언은 적극적으로 하되 진단이나 약 추천은 하지 않는다. 걱정되는 패턴에는 의료 전문가 상담을 권한다. 측정 한계를 설명할 수 있다. 데이터가 없으면 지어내지 말고 없다고 말하며 필요한 기간은 도구로 조회한다."
     private fun declaration(name: String, description: String, dates: Boolean): JSONObject {
         val properties = JSONObject()
         if (dates) {
@@ -39,13 +103,13 @@ internal object GeminiJson {
         .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(today)))))
         .put("contents", contents)
         .put("tools", JSONArray().put(JSONObject().put("functionDeclarations", JSONArray()
-            .put(declaration("get_daily_summary", "날짜별 건강 요약, 최대 120일", true))
+            .put(declaration("get_daily_summary", "60일 이하는 날짜별 건강 요약, 그보다 긴 기간은 주 단위 평균, 최대 366일", true))
             .put(declaration("get_period_stats", "기간 통계와 수면 단계 평균, 최대 120일", true))
             .put(declaration("get_sleep_days", "날짜별 수면과 단계, 최대 60일", true))
             .put(declaration("get_walk_sessions", "걷기 기록, 최대 120일과 100건", true))
             .put(declaration("get_data_range", "종류별 기록 날짜 범위", false)))))
         .put("toolConfig", JSONObject().put("functionCallingConfig", JSONObject().put("mode", "AUTO")))
-        .put("generationConfig", JSONObject().put("temperature", 0.6).put("maxOutputTokens", 2048).apply { if (thinking) put("thinkingConfig", if (model.startsWith("gemini-2.5")) JSONObject().put("thinkingBudget", 512) else JSONObject().put("thinkingLevel", "low")) })
+        .put("generationConfig", JSONObject().put("temperature", 0.6).put("maxOutputTokens", 1024).apply { if (thinking) put("thinkingConfig", if (model.startsWith("gemini-2.5")) JSONObject().put("thinkingBudget", 512) else JSONObject().put("thinkingLevel", "low")) })
 
     fun content(role: String, text: String): JSONObject = JSONObject().put("role", role).put("parts", JSONArray().put(JSONObject().put("text", text)))
     fun response(raw: JSONObject): JSONObject {
@@ -107,18 +171,21 @@ internal class QuestionAttempts(
     private val jitter: (Long) -> Long = { base -> (base * Random.nextDouble(0.8, 1.2)).toLong() },
     private val onProgress: (Int, Boolean) -> Unit = { _, _ -> },
     private val onMissing: (String) -> Unit = {},
+    private val models: List<String> = GeminiConfig.MODELS,
+    private val priorOrder: List<String> = models,
+    private val onModelResult: (String, Boolean, Long) -> Unit = { _, _, _ -> },
 ) {
     var attempts = 0
         private set
     var model = GeminiConfig.MODELS.first()
         private set
     suspend fun <T> execute(request: suspend (String) -> T): T {
-        val order = listOf(0, 1, 2, 1, 2)
+        val order = priorOrder + models
         var lastModel: String? = null
         while (attempts < 5) {
-            val available = GeminiConfig.MODELS.filterNot(availability::isMissing)
+            val available = models.filterNot(availability::isMissing)
             if (available.isEmpty()) throw ChatException(ChatError.Busy)
-            val preferred = GeminiConfig.MODELS[order[attempts]]
+            val preferred = order[attempts.coerceAtMost(order.lastIndex)]
             val fresh = available.filterNot(availability::isCooling)
             model = when {
                 preferred in fresh -> preferred
@@ -128,14 +195,15 @@ internal class QuestionAttempts(
                 else -> available.firstOrNull { it != lastModel } ?: available.first()
             }
             attempts++
+            val attemptStarted = System.currentTimeMillis()
             onProgress(attempts, false)
-            try { return request(model) }
+            try { return request(model).also { onModelResult(model, true, System.currentTimeMillis() - attemptStarted) } }
             catch (e: ModelNotFoundException) { availability.markMissing(model); onMissing(model) }
-            catch (e: RetryableServerException) { availability.markBusy(model) }
-            catch (e: SocketTimeoutException) { availability.markBusy(model) }
-            catch (e: StreamInterruptedException) { availability.markBusy(model) }
+            catch (e: RetryableServerException) { availability.markBusy(model); onModelResult(model, false, System.currentTimeMillis() - attemptStarted) }
+            catch (e: SocketTimeoutException) { availability.markBusy(model); onModelResult(model, false, System.currentTimeMillis() - attemptStarted) }
+            catch (e: StreamInterruptedException) { availability.markBusy(model); onModelResult(model, false, System.currentTimeMillis() - attemptStarted) }
             lastModel = model
-            if (attempts < 5 && GeminiConfig.MODELS.any { !availability.isMissing(it) }) {
+            if (attempts < 5 && models.any { !availability.isMissing(it) }) {
                 onProgress(attempts, true)
                 wait(jitter(RETRY_DELAYS[attempts - 1]))
             }
@@ -278,16 +346,24 @@ internal class StreamAccumulator(private val onText: (String) -> Unit = {}, priv
 internal class StreamServerException(val code: Int) : Exception()
 internal class StreamInterruptedException(cause: Exception) : Exception(cause)
 
-internal class GeminiClient(private val key: String, private val tools: HealthTools, onProgress: (Int, Boolean) -> Unit = { _, _ -> }) {
+internal class GeminiClient(private val key: String, private val tools: HealthTools, models: List<String> = GeminiConfig.MODELS, onProgress: (Int, Boolean) -> Unit = { _, _ -> }, private val modelHistory: ModelHistory? = null) {
     val calledTools = mutableListOf<String>()
-    private val fallback = QuestionAttempts(onProgress = onProgress, onMissing = { Log.i("HCDEBUG", "chat model not found model=$it") })
+    private val fallback = QuestionAttempts(models = models, priorOrder = modelHistory?.order(models) ?: models, onModelResult = { model, success, ms -> modelHistory?.record(model, ModelResult(success, !success, ms, System.currentTimeMillis())) }, onProgress = onProgress, onMissing = { Log.i("HCDEBUG", "chat model not found model=$it") })
     val model: String get() = fallback.model
     val attempts: Int get() = fallback.attempts
     private val startNanos = System.nanoTime()
     var firstTokenMs: Long? = null
         private set
     suspend fun generate(history: List<ChatMessage>, question: String, summary: JSONObject, sources: List<KbSource> = emptyList(), today: LocalDate = LocalDate.now()): String = withContext(Dispatchers.IO) {
-        fallback.execute { model -> generateAttempt(model, history, question, summary, sources, today) }
+        val started = System.currentTimeMillis()
+        try {
+            val answer = fallback.execute { model -> generateAttempt(model, history, question, summary, sources, today) }
+            modelHistory?.record(fallback.model, ModelResult(true, false, System.currentTimeMillis() - started, System.currentTimeMillis()))
+            answer
+        } catch (e: Exception) {
+            modelHistory?.record(fallback.model, ModelResult(false, e is RetryableServerException, System.currentTimeMillis() - started, System.currentTimeMillis()))
+            throw e
+        }
     }
     private suspend fun generateAttempt(model: String, history: List<ChatMessage>, question: String, summary: JSONObject, sources: List<KbSource>, today: LocalDate): String {
         val contents = JSONArray()

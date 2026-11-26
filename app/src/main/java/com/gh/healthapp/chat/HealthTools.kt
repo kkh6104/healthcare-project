@@ -28,7 +28,7 @@ internal class HealthTools(private val db: HealthDatabase) {
     private val clock = DateTimeFormatter.ofPattern("HH:mm")
     suspend fun execute(name: String, args: JSONObject): JSONObject {
         if (name == "get_data_range") return dataRange().let { if (it.length() == 0) it.put("message", "해당 기간 데이터 없음") else it }
-        val max = if (name == "get_sleep_days") 60L else 120L
+        val max = if (name == "get_sleep_days") 60L else if (name == "get_daily_summary") 366L else 120L
         val range = parseDateRange(args.optString("start_date"), args.optString("end_date"), max)
             ?: return JSONObject().put("error", "날짜 또는 조회 기간이 올바르지 않습니다 (최대 ${max}일).")
         val result = when (name) {
@@ -49,6 +49,13 @@ internal class HealthTools(private val db: HealthDatabase) {
     }
     private suspend fun daily(range: DateRange): JSONObject {
         val rows = db.dao().summariesBetween(range.start.toString(), range.end.toString())
+        if (ChronoUnit.DAYS.between(range.start, range.end) + 1 > 60) {
+            val weeks = rows.groupBy { ChronoUnit.WEEKS.between(range.start, LocalDate.parse(it.date)).toInt() }.toSortedMap()
+            return JSONObject().put("period", "week").put("days", JSONArray().apply { weeks.forEach { (index, group) ->
+                fun avg(selector: (com.gh.healthapp.data.DailySummaryEntity) -> Double?): Double? = group.mapNotNull(selector).takeIf { it.isNotEmpty() }?.average()?.let { kotlin.math.round(it * 10) / 10 }
+                put(JSONObject().put("date", range.start.plusWeeks(index.toLong()).toString()).put("steps", avg { it.steps?.toDouble() }).put("sleep_minutes", avg { it.sleepMinutes?.toDouble() }).put("hr_avg", avg { it.hrAvg }).put("weight_kg", avg { it.weightKg }))
+            } })
+        }
         return JSONObject().put("days", JSONArray().apply { rows.forEach { r -> put(JSONObject().apply {
             put("date", r.date); put("steps", r.steps); put("sleep_minutes", r.sleepMinutes)
             put("hr_avg", r.hrAvg); put("hr_min", r.hrMin); put("hr_max", r.hrMax)
