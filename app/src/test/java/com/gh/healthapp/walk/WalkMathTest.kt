@@ -6,6 +6,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WalkMathTest {
+    @org.junit.Test fun walkEndVoiceFormatsDistanceAndDurationBoundaries() {
+        assertEquals("걷기를 종료했습니다. 1킬로미터, 59초", walkEndVoiceText(999.0, 59_000))
+        assertEquals("걷기를 종료했습니다. 1킬로미터, 1분", walkEndVoiceText(1000.0, 60_000))
+        assertEquals("걷기를 종료했습니다. 1.74킬로미터, 1시간", walkEndVoiceText(1740.0, 3_600_000))
+        assertEquals("걷기를 종료했습니다. 990미터, 0초", walkEndVoiceText(994.0, 0))
+        assertEquals("걷기를 종료했습니다. 1킬로미터, 0초", walkEndVoiceText(995.0, 0))
+        assertEquals("걷기를 종료했습니다. 1킬로미터, 0초", walkEndVoiceText(1004.0, 0))
+        assertEquals("걷기를 종료했습니다. 1.01킬로미터, 0초", walkEndVoiceText(1005.0, 0))
+    }
+    @org.junit.Test fun kmAnnouncementsOnlyReportNewKmWhileActiveAndEnabled() {
+        assertEquals(1, nextWalkAnnouncementKm(0, 1010.0, true, true))
+        assertEquals(2, nextWalkAnnouncementKm(0, 2050.0, true, true))
+        assertEquals(null, nextWalkAnnouncementKm(0, 2050.0, false, true))
+        assertEquals(null, nextWalkAnnouncementKm(0, 2050.0, true, false))
+        assertEquals("1킬로미터, 11분 59초, 1,420걸음", walkKmVoiceText(1, 719_000, 1420))
+    }
 
     @Test
     fun autoPauseAndThreeStepsResume() {

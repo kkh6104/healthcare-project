@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 data class GeoPoint(val lat: Double, val lon: Double)
 
@@ -26,6 +27,7 @@ data class WalkLiveState(
     val steps: Int = 0,
     val startedAt: Long? = null,
     val inVehicle: Boolean = false,
+    val countdown: Int? = null,
 )
 
 /** 화면이 걷기 상태를 보고 서비스에 명령을 보내는 창구 */
@@ -34,6 +36,33 @@ object WalkTracker {
     val state: StateFlow<WalkLiveState> = _state
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var countdownJob: kotlinx.coroutines.Job? = null
+    @Volatile private var countdownVoice: WalkVoice? = null
+
+    fun startWithCountdown(context: Context, seconds: Int = 3) {
+        cancelCountdown()
+        val app = context.applicationContext
+        countdownVoice = WalkVoice(app)
+        countdownJob = scope.launch {
+            for (n in seconds.coerceAtLeast(1) downTo 1) {
+                _state.value = WalkLiveState(countdown = n)
+                countdownVoice?.say(n.toString(), WalkSettings(app).getVoice())
+                delay(1000)
+            }
+            countdownVoice?.shutdown()
+            countdownVoice = null
+            _state.value = WalkLiveState()
+            start(app)
+        }
+    }
+
+    fun cancelCountdown() {
+        countdownJob?.cancel()
+        countdownJob = null
+        countdownVoice?.shutdown()
+        countdownVoice = null
+        if (_state.value.countdown != null) _state.value = WalkLiveState()
+    }
 
     /** 서비스에서만 호출 */
     internal fun update(s: WalkLiveState) {

@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/walk-voice-startend.md 기준 — 시작/종료 문구와 거리·시간 포맷(경계값 테스트), 이어폰·스위치 조건, 종료 시 TTS 완료 후(최대 6초) 서비스 종료·shutdown, 이어폰 없으면 대기 없음, restore 마감은 무음, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-walk-voice-startend-result.md 첫 줄 PASS/FAIL, 4줄 이내.

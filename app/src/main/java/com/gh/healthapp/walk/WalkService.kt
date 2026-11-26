@@ -91,6 +91,7 @@ class WalkService : Service() {
 
     private var tickJob: Job? = null
     private var lastNotifyAt = 0L
+    private var lastAnnouncedKm = 0
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -127,6 +128,11 @@ class WalkService : Service() {
                     accuracy = p.accuracy, altitude = p.altitude,
                 )
                 distanceHistory.addLast(Triple(now, distanceM, activeMs()))
+                val km = nextWalkAnnouncementKm(lastAnnouncedKm, distanceM, status == WalkStatus.RUNNING, settings.getKmAnnounce())
+                if (km != null) {
+                    lastAnnouncedKm = km
+                    voice?.say(walkKmVoiceText(km, activeMs(), steps), settings.getVoice(), "km-$km")
+                }
                 while (distanceHistory.size > 1 && distanceHistory.elementAt(1).first <= now - 20_000) distanceHistory.removeFirst()
             }
             publish()
@@ -201,6 +207,7 @@ class WalkService : Service() {
         }
         isRunning = true
         voice = WalkVoice(applicationContext)
+        voice?.say("걷기를 시작합니다", settings.getVoice())
         motion.reset(SystemClock.elapsedRealtime())
         scope.launch {
             sessionId = withDb {
@@ -284,6 +291,7 @@ class WalkService : Service() {
             flush()
             saveSession(WalkStatusValue.DONE, System.currentTimeMillis())
             updateDailyDistance(db, startedAt)
+            voice?.sayAndWait(walkEndVoiceText(distanceM, activeAccumMs), settings.getVoice())
             WalkTracker.reset()
             isRunning = false
             ServiceCompat.stopForeground(this@WalkService, ServiceCompat.STOP_FOREGROUND_REMOVE)

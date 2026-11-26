@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): 시작 안내가 TTS 준비 후 재생되는지(대기열, 5초 폐기, 재생 시 조건 재확인), 거리 반올림 경계(994/995/999/1000/1004/1005) 테스트, assembleDebug testDebugUnitTest 성공. 결과: tasks/review-fix-walk-voice-startend-result.md 첫 줄 PASS/FAIL, 3줄 이내.

@@ -1,0 +1,1 @@
+# 검수 (최소, 코드 수정 금지): tasks/walk-km-countdown-ui.md 기준 — 시작 버튼이 권한 확인 후 startWithCountdown, countdown 오버레이(큰 숫자·애니메이션·취소 버튼·시스템 뒤로가기 취소), "1km마다 음성 안내" 스위치(kmAnnounce), assembleDebug 성공. 결과: tasks/review-walk-km-countdown-ui-result.md 첫 줄 PASS/FAIL, 3줄 이내.

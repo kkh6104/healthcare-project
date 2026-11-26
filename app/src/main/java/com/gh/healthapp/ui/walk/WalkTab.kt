@@ -4,9 +4,17 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +41,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -61,7 +70,9 @@ private val dateFmt = DateTimeFormatter.ofPattern("M월 d일 (E) a h:mm", Locale
 @Composable
 fun WalkTab(onOpenWalk: (Long) -> Unit) {
     val live by WalkTracker.state.collectAsState()
-    if (live.status == WalkStatus.IDLE) {
+    if (live.countdown != null) {
+        WalkCountdown(live.countdown!!)
+    } else if (live.status == WalkStatus.IDLE) {
         WalkIdle(onOpenWalk)
     } else {
         WalkRunning()
@@ -71,6 +82,7 @@ fun WalkTab(onOpenWalk: (Long) -> Unit) {
 @Composable
 private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
     val context = LocalContext.current
+    val live by WalkTracker.state.collectAsState()
     val settings = remember(context) { WalkSettings(context) }
     val settingsState by settings.state.collectAsState()
     val walkDao = remember { HealthDatabase.get(context).walkDao() }
@@ -80,7 +92,8 @@ private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         // 위치 권한이 있어야 시작할 수 있다 (알림/걸음 센서 권한은 없어도 기록은 가능)
         if (WalkPermissions.hasLocation(context)) {
-            denied = !WalkTracker.start(context)
+            denied = false
+            WalkTracker.startWithCountdown(context)
         } else {
             denied = true
         }
@@ -100,7 +113,7 @@ private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
             Button(
                 onClick = {
                     val missing = WalkPermissions.missing(context)
-                    if (missing.isEmpty()) denied = !WalkTracker.start(context) else launcher.launch(missing.toTypedArray())
+                    if (missing.isEmpty()) { denied = false; WalkTracker.startWithCountdown(context) } else launcher.launch(missing.toTypedArray())
                 },
                 modifier = Modifier.fillMaxWidth().height(72.dp),
             ) { Text("걷기 시작", style = MaterialTheme.typography.titleLarge) }
@@ -114,6 +127,10 @@ private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("이어폰 음성 안내", Modifier.weight(1f))
                     Switch(checked = settingsState.voice, onCheckedChange = settings::setVoice)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("1km마다 음성 안내", Modifier.weight(1f))
+                    Switch(checked = settingsState.kmAnnounce, onCheckedChange = settings::setKmAnnounce)
                 }
             }
         }
@@ -144,6 +161,27 @@ private fun WalkIdle(onOpenWalk: (Long) -> Unit) {
         }
         items(sessions, key = { it.id }) { s ->
             SessionRow(s) { onOpenWalk(s.id) }
+        }
+    }
+}
+
+@Composable
+private fun WalkCountdown(value: Int) {
+    BackHandler { WalkTracker.cancelCountdown() }
+    Box(
+        Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(Modifier.fillMaxSize(), color = Color.Black.copy(alpha = 0.88f)) {}
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = { (scaleIn(initialScale = 1.5f) + fadeIn()).togetherWith(scaleOut(targetScale = 0.6f) + fadeOut()) },
+                label = "walk countdown",
+            ) { number ->
+                Text("$number", style = MaterialTheme.typography.displayLarge, color = Color.White)
+            }
+            OutlinedButton(onClick = { WalkTracker.cancelCountdown() }) { Text("취소") }
         }
     }
 }
